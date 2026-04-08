@@ -108,43 +108,132 @@ Each company gets a `ground_truth.json` file:
 
 **Critical distinction:** Recall is measured against suppliers where `verified_in_filing = true` only. If a supplier is publicly known but never mentioned in the 10-K, the extraction cannot find it and should not be penalized for missing it. The `verified_in_filing` flag enforces this boundary.
 
-### Ground Truth Prompt
+### Ground Truth Prompt (v1.0)
 
-The Opus prompt for ground truth assembly outputs the exact schema above. It includes:
+Full prompt text. This is the governing prompt for ground truth assembly — do not modify without updating this spec.
 
-- Instruction to return structured JSON matching the schema
-- Instruction to quote exact sentences from the filing text
-- Instruction to be exhaustive — list every company mentioned as a supplier, vendor, manufacturer, or service provider
-- Explicit exclusion instruction: do not extract customers, competitors, partners, or regulatory bodies
-- The filing section being analyzed (one call per section)
+**System message:**
+
+```
+You are a supply chain research analyst building a ground truth dataset of supplier relationships from SEC 10-K filings. Your task is to identify every company that is named or clearly implied as a supplier, vendor, manufacturer, contract manufacturer, fabricator, assembler, logistics provider, or service provider to the filing company.
+
+Rules:
+1. Be exhaustive. List every supplier relationship you can identify in the text. Missing a real supplier is worse than including a borderline case.
+2. Only extract companies that supply goods or services TO the filing company. Do NOT extract:
+   - Customers or end users of the company's products
+   - Competitors
+   - Regulators or government agencies
+   - Financial institutions (banks, underwriters)
+   - Law firms or auditors
+   - Industry standards bodies
+3. For source_quote: quote the exact sentence or phrase from the text where the supplier is mentioned. The quote MUST be a verbatim substring of the input text. Do not paraphrase.
+4. For criticality: use ONLY one of these values: "sole source", "primary", "one of several", "mentioned", "unknown"
+5. For tier: use 1 for direct suppliers to the filing company. Use 2 only when the text explicitly names a supplier-of-a-supplier (e.g., "our supplier X sources its materials from Y").
+6. For relationship_type: use one of "manufacturer", "component_supplier", "service_provider", "logistics", "technology_partner", "unknown"
+7. Do not infer suppliers from your general knowledge. Only extract relationships stated or clearly implied in the provided text.
+8. If no suppliers are identifiable in the text, return {"suppliers": []}
+```
+
+**User message template:**
+
+```
+Filing company: {company_name} (Ticker: {ticker}, CIK: {cik})
+Filing: {filing_type} filed {filing_date}
+Section: {section_name}
+
+Identify every supplier relationship in the following text and return structured JSON.
 
 ---
+{section_text}
+---
 
-## Phase 2: Extraction Runs
-
-### Extraction Prompt Output Schema
-
-The extraction prompt (derived from PROMPTS.md v1.0) produces this output per filing section:
-
-```json
+Return JSON in this exact format:
 {
   "suppliers": [
     {
-      "supplier_name": "Taiwan Semiconductor Manufacturing Company",
-      "relationship_type": "manufacturer",
-      "criticality_signal": "sole source — 'manufacture all of our GPUs'",
-      "confidence": 0.95,
-      "source_quote": "exact sentence from the filing",
-      "filing_section": "Item 1A"
+      "supplier_name": "exact name as it appears in the text",
+      "normalized_name": "lowercase name with legal suffixes removed",
+      "aliases": ["known abbreviations or alternate names"],
+      "relationship_type": "manufacturer|component_supplier|service_provider|logistics|technology_partner|unknown",
+      "tier": 1,
+      "what_they_supply": "brief description of what they supply",
+      "criticality": "sole source|primary|one of several|mentioned|unknown",
+      "verified_in_filing": true,
+      "filing_quote": "exact verbatim quote from the text above",
+      "filing_section": "{section_name}"
     }
   ]
 }
 ```
 
+---
+
+## Phase 2: Extraction Runs
+
+### Extraction Prompt (v1.0)
+
+Full prompt text. This is the prompt being tested — prompt iteration in Phase 4 modifies this prompt and increments the version number.
+
+**System message:**
+
+```
+You are a supply chain analyst extracting supplier relationships from SEC filings. Your task is to identify companies that are named or clearly implied as suppliers, vendors, manufacturers, or service providers to the filing company.
+
+Rules:
+1. Only extract companies that supply goods or services TO the filing company. Do NOT extract:
+   - Customers or end users
+   - Competitors
+   - Regulators or government agencies
+   - Financial institutions, law firms, or auditors
+2. For each supplier, classify the relationship_type as one of: manufacturer, component_supplier, service_provider, logistics, technology_partner, unknown
+3. For criticality_signal: extract the specific language from the filing that indicates dependency level. Use the company's own words (e.g., "sole source", "a limited number of suppliers", "our primary manufacturer"). If no dependency language is present, set to "unknown".
+4. Assign a confidence score from 0.0 to 1.0:
+   - 0.85-1.0: Supplier is explicitly named with clear supply relationship language
+   - 0.65-0.84: Supplier relationship is strongly implied but not directly stated
+   - 0.40-0.64: Supplier relationship is inferred from indirect evidence
+   - Below 0.40: Do not include
+5. For source_quote: quote the exact sentence or phrase where the supplier is mentioned. The quote MUST be a verbatim substring of the input text. Do not paraphrase or reconstruct.
+6. Do not infer suppliers from your general knowledge of the company. Only extract relationships present in the provided text.
+7. Do not extract former suppliers described in past tense ("we previously relied on", "we formerly sourced from"). Only extract current relationships.
+8. If no suppliers are identifiable, return {"suppliers": []}
+```
+
+**User message template:**
+
+```
+Filing company: {company_name} (Ticker: {ticker}, CIK: {cik})
+Filing: {filing_type} filed {filing_date}
+Section: {section_name}
+
+Extract all supplier relationships from the following text:
+
+---
+{section_text}
+---
+
+Respond in this exact JSON format:
+{
+  "suppliers": [
+    {
+      "supplier_name": "exact name as it appears in the text",
+      "relationship_type": "manufacturer|component_supplier|service_provider|logistics|technology_partner|unknown",
+      "criticality_signal": "exact dependency language from the filing, or 'unknown'",
+      "confidence": 0.85,
+      "source_quote": "exact verbatim quote from the text above",
+      "filing_section": "{section_name}"
+    }
+  ]
+}
+```
+
+### Extraction Output Schema
+
+Each extraction run produces one JSON file per company per model, containing merged results from all 4 sections:
+
 Fields:
 - `supplier_name`: exact name as it appears in the filing
 - `relationship_type`: one of `manufacturer`, `component_supplier`, `service_provider`, `logistics`, `technology_partner`, `unknown`
-- `criticality_signal`: any language suggesting dependency level (sole source, primary, one of several, etc.)
+- `criticality_signal`: dependency language from the filing, or "unknown"
 - `confidence`: 0.0-1.0 score assigned by the model
 - `source_quote`: exact sentence or phrase from the filing text (must be a verbatim substring)
 - `filing_section`: which section this was found in
@@ -218,7 +307,7 @@ Every extraction that does not receive full credit is classified into exactly on
 | Hallucination | Extracted entity does not appear in the filing text at all | Precision |
 | Wrong role | Entity exists in filing but is a customer, competitor, or partner — not a supplier | Precision |
 | Missed entity | Known supplier (verified_in_filing = true) not found in extraction output | Recall |
-| Name fragmentation | Same supplier extracted as two separate entities due to name variation (e.g., "TSMC" and "Taiwan Semiconductor" both extracted) | Precision (inflates count) |
+| Name fragmentation | Same supplier extracted as two separate entities due to name variation (e.g., "TSMC" and "Taiwan Semiconductor" both extracted). Only the highest-confidence match receives credit; all duplicates are counted as precision errors. | Precision (inflates count) |
 | Incomplete relationship | Supplier correctly found but `relationship_type` or `criticality_signal` missing or wrong | Neither (tracked for prompt quality) |
 | Wrong section attribution | Supplier correctly found but `filing_section` field is incorrect | Neither (tracked for prompt quality) |
 | Stale relationship | Extracted a former supplier described in past tense ("we previously relied on...") | Precision |
@@ -338,6 +427,25 @@ A one-page validation summary capturing:
 - **Known limitations** and planned mitigations
 
 This document is added to ARCHITECTURE.md as a decision log entry. It serves as the baseline for future comparisons when adding tickers, switching models, or evaluating data source additions.
+
+---
+
+## Pre-Flight Checklist
+
+All of the following must be confirmed before Phase 1 begins:
+
+- [ ] **EDGAR API access tested** — confirm a simple CIK lookup and filing retrieval works with proper User-Agent header
+- [ ] **Claude API key configured** — confirm access to both Claude Sonnet 4.6 and Claude Opus 4.6 models
+- [ ] **Most recent 10-K filing year confirmed** for each company:
+  - Apple (AAPL) — confirm CIK, most recent 10-K accession number, filing date
+  - Tesla (TSLA) — confirm CIK, most recent 10-K accession number, filing date
+  - NVIDIA (NVDA) — confirm CIK, most recent 10-K accession number, filing date
+- [ ] **Exhibit 10 contents verified** for each company — Exhibit 10 varies significantly. Some companies attach supplier contracts; others attach only executive compensation agreements and equity plans. **Verify the actual contents before including in extraction scope.** If a company's Exhibit 10 contains no supplier-relevant contracts (e.g., NVIDIA's Exhibit 10 is primarily executive compensation), exclude it from that company's extraction run and note the exclusion in results. Do not extract noise.
+- [ ] **External verification sources confirmed accessible:**
+  - Apple Supplier Responsibility PDF (most recent year) — download and confirm it contains named supplier list
+  - Tesla teardown/supplier coverage — confirm at least 2 independent sources with named suppliers
+  - NVIDIA supplier coverage — confirm financial press sources covering TSMC dependency and other key suppliers
+- [ ] **Python environment set up** with dependencies for scoring script (thefuzz for fuzzy matching, json for parsing)
 
 ---
 
