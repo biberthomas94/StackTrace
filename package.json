@@ -1,0 +1,21 @@
+{
+  "name": "files-mentioned-by-the-user-stacktrace",
+  "version": "1.0.0",
+  "description": "",
+  "main": "src/sec-pipeline.js",
+  "scripts": {
+    "sec:report": "node src/sec-pipeline.js report",
+    "sec:pull": "node src/sec-pipeline.js pull",
+    "extract:candidates": "node src/extract-candidates.js",
+    "graph:seed": "node src/build-network-map.js",
+    "graph:render": "node src/render-stacktrace-dashboard.js",
+    "graph:serve": "node src/review-server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "pdf-parse": "^2.4.5"
+  }
+}
