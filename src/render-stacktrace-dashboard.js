@@ -293,7 +293,8 @@ function buildDashboardHtml(graph) {
       border-radius: var(--radius);
       background: transparent;
       color: #aab9b6;
-      cursor: default;
+      cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
     }
 
     .nav-item {
@@ -304,6 +305,16 @@ function buildDashboardHtml(graph) {
     .nav-item.active {
       color: #ecfffb;
       background: rgba(77, 228, 216, 0.11);
+      box-shadow: inset 3px 0 0 var(--teal);
+    }
+
+    .nav-item:hover,
+    .watch-chip:hover,
+    .quiet-button:hover,
+    .icon-button:hover {
+      color: #ecfffb;
+      border-color: rgba(77, 228, 216, 0.28);
+      background: rgba(77, 228, 216, 0.07);
     }
 
     .watchlist {
@@ -321,6 +332,7 @@ function buildDashboardHtml(graph) {
     .watch-chip.selected {
       color: #ecfffb;
       border-color: rgba(77, 228, 216, 0.25);
+      background: rgba(77, 228, 216, 0.08);
     }
 
     .workspace {
@@ -432,6 +444,16 @@ function buildDashboardHtml(graph) {
       background: var(--teal);
     }
 
+    .view-toggle button:hover {
+      color: #effffb;
+      background: rgba(77, 228, 216, 0.08);
+    }
+
+    .view-toggle button.selected:hover {
+      color: #06100f;
+      background: var(--teal);
+    }
+
     .graph-canvas {
       position: relative;
       min-height: 0;
@@ -479,6 +501,8 @@ function buildDashboardHtml(graph) {
         rgba(18, 41, 44, 0.92);
       color: #effffb;
       box-shadow: 0 0 0 7px rgba(58, 228, 216, 0.035), 0 18px 40px rgba(0, 0, 0, 0.38);
+      transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+      cursor: pointer;
     }
 
     .graph-node span {
@@ -497,6 +521,13 @@ function buildDashboardHtml(graph) {
 
     .graph-node.selected {
       border-color: rgba(231, 168, 88, 0.68);
+      box-shadow: 0 0 0 9px rgba(217, 154, 77, 0.09), 0 0 34px rgba(119, 236, 223, 0.28), 0 18px 40px rgba(0, 0, 0, 0.38);
+      transform: translate(-50%, -50%) scale(1.04);
+    }
+
+    .graph-node:hover {
+      border-color: rgba(119, 236, 223, 0.78);
+      box-shadow: 0 0 0 9px rgba(58, 228, 216, 0.08), 0 18px 40px rgba(0, 0, 0, 0.38);
     }
 
     .graph-node i {
@@ -578,6 +609,16 @@ function buildDashboardHtml(graph) {
       color: #07110f;
       font-size: 12px;
       font-weight: 800;
+      transition: box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    .flow-step[data-edge-id] {
+      cursor: pointer;
+    }
+
+    .flow-step.selected .flow-block {
+      box-shadow: 0 0 0 3px rgba(217, 154, 77, 0.28), 0 0 24px rgba(119, 236, 223, 0.24);
+      transform: translateY(-1px);
     }
 
     .flow-block.anchor { background: #eff5f4; }
@@ -814,18 +855,18 @@ function buildDashboardHtml(graph) {
       </label>
 
       <nav class="nav-list">
-        <button class="nav-item active"><span aria-hidden="true">#</span><span>Network</span></button>
-        <button class="nav-item"><span aria-hidden="true">$</span><span>Signals</span></button>
-        <button class="nav-item"><span aria-hidden="true">!</span><span>Alerts</span></button>
-        <button class="nav-item"><span aria-hidden="true">+</span><span>Policy</span></button>
+        <button class="nav-item active" data-select-group="nav"><span aria-hidden="true">#</span><span>Network</span></button>
+        <button class="nav-item" data-select-group="nav"><span aria-hidden="true">$</span><span>Signals</span></button>
+        <button class="nav-item" data-select-group="nav"><span aria-hidden="true">!</span><span>Alerts</span></button>
+        <button class="nav-item" data-select-group="nav"><span aria-hidden="true">+</span><span>Policy</span></button>
       </nav>
 
       <section class="watchlist">
         <div class="section-kicker">Watchlist</div>
-        <button class="watch-chip selected">NVDA</button>
-        <button class="watch-chip">AMD</button>
-        <button class="watch-chip">AAPL</button>
-        <button class="watch-chip">TSLA</button>
+        <button class="watch-chip selected" data-select-group="watchlist">NVDA</button>
+        <button class="watch-chip" data-select-group="watchlist">AMD</button>
+        <button class="watch-chip" data-select-group="watchlist">AAPL</button>
+        <button class="watch-chip" data-select-group="watchlist">TSLA</button>
       </section>
     </aside>
 
@@ -859,8 +900,8 @@ function buildDashboardHtml(graph) {
             <span>Node Size: Exposure</span>
           </div>
           <div class="view-toggle" aria-label="View mode">
-            <button class="selected">Network</button>
-            <button>Flow</button>
+            <button class="selected" data-select-group="view">Network</button>
+            <button data-select-group="view">Flow</button>
           </div>
         </div>
 
@@ -933,6 +974,7 @@ function buildDashboardHtml(graph) {
     const signalCopy = document.getElementById("signal-copy");
     const flowTrack = document.getElementById("flow-track");
     const pageTitle = document.getElementById("page-title");
+    let selectedEdgeId = "";
 
     const preferredPositions = [
       { x: 48, y: 48, size: 92 },
@@ -1002,6 +1044,7 @@ function buildDashboardHtml(graph) {
         button.style.width = node.size + "px";
         button.style.height = node.size + "px";
         button.setAttribute("aria-label", label(node));
+        if (node.edge) button.dataset.edgeId = node.edge.id;
         button.innerHTML = "<span>" + escapeHtml(label(node)) + "</span><small>" + (index === 0 ? "Anchor" : "Tier " + Math.min(index, 3)) + "</small>" + (riskFor(index, node.edge) === "watch" ? "<i></i>" : "");
         if (node.edge) button.addEventListener("click", () => renderEvidence(node.edge));
         graphCanvas.appendChild(button);
@@ -1017,12 +1060,20 @@ function buildDashboardHtml(graph) {
         const tone = index === 0 ? "anchor" : index === 3 ? "amber" : "teal";
         const width = Math.max(48, Math.min(116, node.size + 18));
         const arrow = index < steps.length - 1 ? '<span aria-hidden="true">-&gt;</span>' : "";
-        return '<div class="flow-step"><div class="flow-block ' + tone + '" style="width:' + width + 'px">' + escapeHtml(label(node)) + '</div>' + arrow + '</div>';
+        const edgeId = node.edge?.id || "";
+        return '<div class="flow-step" ' + (edgeId ? 'data-edge-id="' + escapeHtml(edgeId) + '"' : "") + '><div class="flow-block ' + tone + '" style="width:' + width + 'px">' + escapeHtml(label(node)) + '</div>' + arrow + '</div>';
       }).join("");
+      document.querySelectorAll(".flow-step[data-edge-id]").forEach((step) => {
+        step.addEventListener("click", () => {
+          const edge = graph.edges.find((item) => item.id === step.dataset.edgeId);
+          if (edge) renderEvidence(edge);
+        });
+      });
     }
 
     function renderEvidence(edge) {
       if (!edge) return;
+      selectedEdgeId = edge.id;
       const target = nodesById.get(edge.target);
       const score = confidence(edge);
       const evidence = edge.evidence?.[0] || {};
@@ -1044,6 +1095,27 @@ function buildDashboardHtml(graph) {
         '<article class="source-row"><div><strong>' + escapeHtml(row.label) + '</strong><span>' + escapeHtml(row.detail) + '</span></div><em>' + escapeHtml(row.status) + '</em></article>'
       )).join("");
       signalCopy.textContent = label(target) + " is part of the selected upstream path. Relationship strength is based on evidence count, citation quality, and source recency.";
+      updateRelationshipSelection();
+    }
+
+    function updateRelationshipSelection() {
+      document.querySelectorAll(".graph-node[data-edge-id]").forEach((node) => {
+        node.classList.toggle("selected", node.dataset.edgeId === selectedEdgeId);
+      });
+      document.querySelectorAll(".flow-step[data-edge-id]").forEach((step) => {
+        step.classList.toggle("selected", step.dataset.edgeId === selectedEdgeId);
+      });
+    }
+
+    function wireSelectionGroups() {
+      document.querySelectorAll("[data-select-group]").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll('[data-select-group="' + button.dataset.selectGroup + '"]').forEach((item) => {
+            item.classList.toggle("active", item === button);
+            item.classList.toggle("selected", item === button);
+          });
+        });
+      });
     }
 
     function escapeHtml(value) {
@@ -1054,6 +1126,7 @@ function buildDashboardHtml(graph) {
         .replaceAll('"', "&quot;");
     }
 
+    wireSelectionGroups();
     renderGraph();
   </script>
 </body>
